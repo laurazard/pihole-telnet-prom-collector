@@ -1,0 +1,8 @@
+# TODO
+
+- need to enable native histograms in prometheus
+- make port configurable
+- write (this) README
+- CI
+- don't reset histogram on every collect
+- tests

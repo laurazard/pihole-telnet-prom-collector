@@ -15,12 +15,16 @@ import (
 )
 
 type CollectorOptions struct {
+	MetricsPort     string
 	LocalTelnetPort string
 }
 
 func fromEnv(opts *CollectorOptions) {
 	if v, ok := os.LookupEnv("PI_COL_TELNET_FWD_PORT"); ok {
 		opts.LocalTelnetPort = v
+	}
+	if v, ok := os.LookupEnv("PI_COL_METRICS_PORT"); ok {
+		opts.MetricsPort = v
 	}
 }
 
@@ -37,24 +41,27 @@ func RootCmd() *cobra.Command {
 	}
 
 	flags := cmd.Flags()
-	flags.StringVarP(&opts.LocalTelnetPort, "port", "P", "4711", "")
+	flags.StringVarP(&opts.MetricsPort, "port", "p", "8080", "")
+	flags.StringVar(&opts.LocalTelnetPort, "telnet-port", "4711", "")
 
 	return cmd
 }
 
 func RunCollector(_ context.Context, opts *CollectorOptions) error {
 	fromEnv(opts)
-
-	// if user sets it to ""
 	if opts.LocalTelnetPort == "" {
 		return errors.New("host cannot be empty")
 	}
+	if opts.MetricsPort == "" {
+		return errors.New("metrics port cannot be empty")
+	}
+	metricsAddr := ":" + opts.MetricsPort
 
 	prometheus.MustRegister(collector.NewPiHoleCollector("localhost:" + opts.LocalTelnetPort))
 
 	http.Handle("/metrics", promhttp.Handler())
-	logrus.Info("beginning to serve on port :8080")
-	logrus.Fatal(http.ListenAndServe(":8080", nil))
+	logrus.Infof("beginning to serve on %s", metricsAddr)
+	logrus.Fatal(http.ListenAndServe(metricsAddr, nil))
 
 	return nil
 }

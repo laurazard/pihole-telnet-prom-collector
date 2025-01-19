@@ -1,5 +1,8 @@
-
 SHELL := /bin/bash
+
+ifeq ($(PORT),)
+PORT := 8080
+endif
 
 all: binary
 
@@ -28,13 +31,13 @@ build-dev-image:
 run-docker: build-dev-image
 	docker run \
 		--rm \
-		-p 8080:8080 \
+		-p 8080:$(PORT) \
 		-e SSH_AUTH_SOCK=/ssh-agent.sock \
 		--mount type=bind,src="$${SSH_AUTH_SOCK}",target=/ssh-agent.sock \
 		--env-file=.env \
 		--name pi-collector \
     	-it \
-		pi-telnet-collector
+		pi-telnet-collector -p $(PORT)
 
 .PHONY: metrics
 metrics: ## curl metrics endpoint for the collector

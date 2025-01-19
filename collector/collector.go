@@ -12,6 +12,8 @@ type PiHoleCollector struct {
 	queryBucketsDesc *prometheus.Desc
 	queryGaugeDesc   *prometheus.Desc
 
+	queryBuckets *prometheus.HistogramVec
+
 	piClient      pihole.Client
 	lastCollected time.Time
 }
@@ -20,6 +22,18 @@ func NewPiHoleCollector(url string) *PiHoleCollector {
 	piClient := pihole.TelnetClient{
 		URL: url,
 	}
+
+	histOpts := prometheus.HistogramVecOpts{
+		HistogramOpts: prometheus.HistogramOpts{
+			Namespace:                    "pihole",
+			Name:                         "query_duration_ms_buckets",
+			Buckets:                      []float64{1, 3, 5, 10, 20, 50, 100, 200, 1000},
+			NativeHistogramBucketFactor:  1.2,
+			NativeHistogramZeroThreshold: 0.2,
+		},
+		VariableLabels: bucketLabels,
+	}
+	hist := prometheus.V2.NewHistogramVec(histOpts)
 
 	return &PiHoleCollector{
 		piClient:      &piClient,
@@ -33,6 +47,7 @@ func NewPiHoleCollector(url string) *PiHoleCollector {
 			"pihole_query_duration_ms",
 			"DNS query duration, represented as a gauge.",
 			[]string{"type", "reply", "status", "upstream", "client", "domain"}, nil),
+		queryBuckets: hist,
 	}
 }
 
@@ -51,22 +66,6 @@ func (c *PiHoleCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 	metres := prometheus.V2.NewGaugeVec(gaugeOpts)
 
-	histOpts := prometheus.HistogramVecOpts{
-		HistogramOpts: prometheus.HistogramOpts{
-			Namespace:                    "pihole",
-			Name:                         "query_duration_ms_buckets",
-			Buckets:                      []float64{1, 3, 5, 10, 20, 50, 100, 200, 1000},
-			NativeHistogramBucketFactor:  1.2,
-			NativeHistogramZeroThreshold: 0.2,
-		},
-		VariableLabels: bucketLabels,
-	}
-	// TODO(laurazard): due to the nature of prometheus Histograms,
-	// instead of creating one on Collect and then throwing it away
-	// we should instead keep a running one so that it doesn't reset
-	// every time.
-	hist := prometheus.V2.NewHistogramVec(histOpts)
-
 	collectionTime := time.Now()
 	queries, err := c.piClient.GetQueries(c.lastCollected)
 	if err != nil {
@@ -75,11 +74,11 @@ func (c *PiHoleCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	for _, q := range queries {
-		hist.With(queryBucketLabels(q)).Observe(q.DelayMs)
+		c.queryBuckets.With(queryBucketLabels(q)).Observe(q.DelayMs)
 		metres.With(queryGaugeLabels(q)).Set(q.DelayMs)
 	}
 
-	hist.Collect(ch)
+	c.queryBuckets.Collect(ch)
 	metres.Collect(ch)
 	c.lastCollected = collectionTime
 }
